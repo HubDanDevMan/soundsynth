@@ -8,7 +8,7 @@ TONE_LENGTH = 1     # Duration in seconds
 VOLUME = 1          # Loudness
 
 
-CODE = "0.4C4,0.4D#4,0.4F4,0.4F#4,0.4F4,0.4D#4,0.4C4,2.0Ø"
+CODE = "0.4C4,0.4D#4,0.4F4,0.4F#4,0.4F4,0.4D#4,0.4C4,0.8Ø,0.2A#3,0.2D4,0.4C4,0.8Ø,0.4G3,0.4C4,0.4Ø,0.4C4,0.4D#4,0.4F4,0.4F#4,0.4F4,0.4D#4,0.4F#4,0.8Ø,0.2F#4,0.2F4,0.2D#4,0.2F#4,0.2F4,0.2D#4,0.4C4"
 
 
 def freqAt(index):
@@ -37,34 +37,32 @@ NOTES = {
     "C#5": freqAt(4),
     "D5": freqAt(5),
     "D#5": freqAt(6),
-    "Ø": 34000
-    }
+    "Ø": 0.1
+}
 
 
 def multilayer(*notes): # add float
-    """Adds all the bote channels to a single channel"""
-    base = bytearray(b"\x00")
-    for n, note in enumerate(notes):
-        i = 0
-        while note:
-            print(base[i:i+4][0], note[0:4][0][0],"\n*\n") 
-            base += bytes(ct.c_float(
-                         base[i:i+4][0] + note[0:4][0]
-                    )
-                )
-            note = note[4:]
-            i += 4
-            print(len(note))
-    return bytes(base)
+    """Adds all the note channels (float arrays) to a single channel"""
+    base = notes[0]
+    print("Base:",len(base))
+    for note in notes[1:]:
+        print(base)
+        for n, value in enumerate(note):
+            if len(base) <= n: 
+                base.append(value)
+                print("added directly")
+            else:
+                base[n] += value
+                print("appended: ",n)
+    return base
 
 
 def parseCode(c):
+    """generates a single channel as a float array"""
     sound = []
     a = c.split(",")
     for note in a:
-        sound.append(generateSound(
-                NOTES[note[3:]], float(note[0:3]))
-                )
+        sound += generateSound(NOTES[note[3:]], float(note[0:3]))
         c = c[2:]
     return sound
 
@@ -73,23 +71,27 @@ def soundAt(sampleIndex,tone):
     return sin(sampleIndex / (freq / (pi*2)))
 
 def generateSound(tone, length):
+    """Returns a list of floats"""
     arr = []
     for index in range(int(SAMPLE_SIZE * length)):# TIME?
-        arr.append(
-                soundAt(index, tone) * VOLUME)
+        arr += [
+                soundAt(index, tone) * VOLUME ]
     return arr
 
 def Main():
-    sound = parseCode(CODE)
-    print(len(sound))
-    with open("soundfile", "wb") as f:
-        f.write(b"".join([ct.c_float(s) for s in sound]))
+    res = parseCode(CODE) # Float array
+    print("samples: ", len(res))
+    with open("soundfile.raw", "wb") as f:
+        f.write(b"".join([ct.c_float(s) for s in res])) # convert to c_float and join
 
 if __name__ == '__main__':
-    Main()
-    """
+     Main()
+"""
     a = parseCode("1.3C4,0.7A4")
-    b = parseCode("0.4F4,1.6C#4")
+    b = parseCode("0.4F4,2.6C#4")
     sound = multilayer(a,b)
-    with open("soundfile", "wb") as f:
-        f.write(sound)"""
+    if sound == b:
+        print("equal")
+    with open("soundfile.raw", "wb") as f:
+        f.write(b"".join([ct.c_float(s) for s in sound]))
+    """
