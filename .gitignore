@@ -1,2 +1,8 @@
 # sound output
 *.raw
+
+# binaries
+*.out
+
+# object files
+*.o
