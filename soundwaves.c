@@ -199,3 +199,27 @@ floatArray_t overtone(float duration, float note, overtone_t *desc, wavefunc_t w
 }
 
 
+// Add all together and frees them
+floatArray_t joinwaves(floatArray_t arrays[], unsigned long count){
+	// find longest floatarray and use it as the base.
+	// This float array will then be returnes
+	unsigned long longest;
+	unsigned long longestSize = 0;
+	for (unsigned long i = 0; i < count; i++){
+		if ( arrays[i].length > longestSize){
+			longest = i;
+			longestSize = arrays[i].length;
+		}
+	}
+	// Add them together
+	for (i = 0; i < count; i++){
+		if (i != longest){
+			for (unsigned long sample; sample < arrays[i].length; sample++){
+				arrays[longest].data[sample] += arrays[i].data[sample]
+			}
+			// free unused array
+			free(arrays[i].data);
+		}
+	}
+	return arrays[longest];
+}

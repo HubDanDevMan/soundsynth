@@ -22,12 +22,6 @@ typedef struct {
 } floatArray_t;
 
 
-// Timbre of an instrument/synth can be described as a summation
-// of multiple harmonic overtones with different volume.
-typedef struct {
-	char * name;			// Instrument name
-	float values[OVERTONE_MAX];	// floats range from 0.0-1.0
-} overtone_t;
 
 // Make function ptrs readable
 typedef floatArray_t (*wavefunc_t)(float,float); 
@@ -37,6 +31,8 @@ floatArray_t sawtooth(float duration, float note);
 floatArray_t squarewave(float duration, float note);
 floatArray_t squaredSeries(float duration, float note);
 floatArray_t overtone(float duration, float note, overtone_t * desc, wavefunc_t wavefunc);
+floatArray_t joinwaves(floatArray_t arrays[], unsigned long size);
+
 
 // __SOUNDWAVES_H
 #endif
