@@ -1,26 +1,27 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include "debug.h"
 #include "soundwaves.h"
+#include "harmonics.h"
+#include "melodyparser.h"
+osc_t oscillators[OSC_COUNT];
+
+const unsigned long SAMPLE_SIZE = 44100;	// 44.1k is the default sample size
+const float VOLUME = 0.4f; 			// Default volume, less than 1 to ensure less clipping is performed at the end
 
 
-
-static void printfFlar(floatArray_t f){
-	printf(
-		"Synthesized %d samples\n", f.length
-	);
+float FREQ(float tone){
+	return ((float) SAMPLE_SIZE / tone);
 }
 
-const unsigned long SAMPLE_SIZE = 44100; // 44.1k is the default sample size
-const float VOLUME = 0.3f; // 44.1k is the default sample size
-#define FREQ(tone) (SAMPLE_SIZE / tone)
 
-
-static inline float sineAt(unsigned long sample_index, float factor){
+float sineAt(unsigned long sample_index, float factor){
 	return sin(sample_index/factor) * VOLUME;
 }
 
-static inline float squareAt(unsigned long sample_index, float factor){
+float squareAt(unsigned long sample_index, float factor){
 	float x = sample_index/factor;
 	return 	(sin(x) +
 		(1.0f/3.0f) * sin(3.0f*x) +
@@ -30,17 +31,17 @@ static inline float squareAt(unsigned long sample_index, float factor){
 		(1.0f/11.0f) * sin(11.0f*x)) * VOLUME;
 }
 
-static inline float sawtoothAt(unsigned long sample_index, float factor){
+float sawtoothAt(unsigned long sample_index, float factor){
 	float x = sample_index/factor;
 	return 	(sin(x) +
 		(1.0f/2.0f) * sin(2.0f*x) +
 		(1.0f/3.0f) * sin(3.0f*x) +
 		(1.0f/4.0f) * sin(4.0f*x) +
 		(1.0f/5.0f) * sin(5.0f*x) +
-		(1.0f/6.0f) * sin(6.0f*x)) * VOLUME;
+		(1.0f/6.0f) * sin(6.0f*x)) * VOLUME * 0.7;	// Reduced amplitude due to Sawtooth wave being louder
 }
 
-static inline float squaredseriesAt(unsigned long sample_index, float factor){
+float squaredseriesAt(unsigned long sample_index, float factor){
 	float x = sample_index/factor;
 	return 	(sin(x) +
 		(1.0f/4.0f) * sin(4.0f*x) +
@@ -50,103 +51,53 @@ static inline float squaredseriesAt(unsigned long sample_index, float factor){
 		(1.0f/36.0f) * sin(36.0f*x))* VOLUME;
 }
 
+float noiseAt(unsigned long sample_index, float factor){
+	return sin(rand()) * VOLUME*0.6;		// returns random float in codomain {-1.0 - 1.0}
+}
 
-/* Basic sinewave digital oscillator */
+/* Basic digital oscillator */
 
-floatArray_t sinewave(float duration, float note){
-	float factor = (FREQ(note) / (2 * M_PI));
+floatArray_t createNote(float duration, float note, OSC osc){
+	DEBUG("Creating Note with duration %f and frequency %f", duration, note);
+	float factor = (FREQ(note) / (2.0f * M_PI));
 	floatArray_t flar;
 	flar.length = duration * SAMPLE_SIZE; // time in seconds * (samples/second)
 
+	if (note == -1.0f){
+		DEBUG("Unexpected Frequency of -1.0f");
+		flar.length = 0;
+		return flar;
+	} 
 	// using malloc instead of PyMem_RawMalloc is fine for performance critical use cases such as this one :^)
+	DEBUG("Allocating %lu bytes", sizeof(float) * flar.length);
 	flar.data = malloc(sizeof(float) * flar.length);
 	if (flar.data == NULL){
 		flar.length = SND_MEMORY_ERR;
+		DEBUG("Memory allocation failed!");
+		return flar;
+	}
+	if (note == PAUSE_FREQ){	// Check if note is a pause and optimize 
+		// using memset to set silent pcm values with memset. This speeds up the synthesis significantly.
+		DEBUG("Optimizing pause with duration %f by setting %lu bytes to 0, %d floats", duration, flar.length*sizeof(float), flar.length);
+		memset(flar.data, 0x00, flar.length*sizeof(float));
+		DEBUG("Synthesized %d samples", flar.length)
 		return flar;
 	}
 
 	
 	for (int sampleIndex = 0; sampleIndex < flar.length; sampleIndex++){
-		flar.data[sampleIndex] = sineAt(sampleIndex, factor);
+		flar.data[sampleIndex] = (*oscillators[osc])(sampleIndex, factor);
 	}
-	printfFlar(flar);
-	
+	DEBUG("Synthesized %d samples", flar.length)
 	return flar;
 }
 
 
-floatArray_t sawtooth(float duration, float note){
-	float factor = (FREQ(note) / (2 * M_PI));
-	floatArray_t flar;
-	flar.length = duration * SAMPLE_SIZE; // time in seconds * (samples/second)
-
-	// using malloc instead of PyMem_RawMalloc is fine for performance critical use cases such as this one :^)
-	flar.data = malloc(sizeof(float) * flar.length);
-	if (flar.data == NULL){
-		flar.length = SND_MEMORY_ERR;
-		return flar;
-	}
-
-	
-	for (int sampleIndex = 0; sampleIndex < flar.length; sampleIndex++){
-		flar.data[sampleIndex] = sawtoothAt(sampleIndex, factor);
-	}
-	
-	printfFlar(flar);
-	return flar;
-
-
-}
-
-floatArray_t squarewave(float duration, float note){
-	float factor = (FREQ(note) / (2 * M_PI));
-	floatArray_t flar;
-	flar.length = duration * SAMPLE_SIZE; // time in seconds * (samples/second)
-
-	// using malloc instead of PyMem_RawMalloc is fine for performance critical use cases such as this one :^)
-	flar.data = malloc(sizeof(float) * flar.length);
-	if (flar.data == NULL){
-		flar.length = SND_MEMORY_ERR;
-		return flar;
-	}
-
-	
-	for (int sampleIndex = 0; sampleIndex < flar.length; sampleIndex++){
-		flar.data[sampleIndex] = squareAt(sampleIndex, factor);
-	}
-	
-	printfFlar(flar);
-	return flar;
-
-
-}
-
-/* This waveform is comprised of numbers resulting squared */
-floatArray_t squaredSeries(float duration, float note){
-	float factor = (FREQ(note) / (2 * M_PI));
-	floatArray_t flar;
-	flar.length = duration * SAMPLE_SIZE; // time in seconds * (samples/second)
-
-	// using malloc instead of PyMem_RawMalloc is fine for performance critical use cases such as this one :^)
-	flar.data = malloc(sizeof(float) * flar.length);
-	if (flar.data == NULL){
-		flar.length = SND_MEMORY_ERR;
-		return flar;
-	}
-
-	
-	for (int sampleIndex = 0; sampleIndex < flar.length; sampleIndex++){
-		flar.data[sampleIndex] = squaredseriesAt(sampleIndex, factor);
-	}
-	
-	return flar;
-
-}
 
 /* This function generates a float array of a note with harmonic overtones */
-floatArray_t overtone(float duration, float note, overtone_t *desc, wavefunc_t wavefunc){
-	floatArray_t separate[OVERTONE_MAX];
-	int overtoneCounter = 0;
+floatArray_t overtone(float duration, float note, float desc[OVERTONES_MAX], OSC osc){
+	floatArray_t separate[OVERTONES_MAX];
+	unsigned long overtoneCounter = 0;
 	float oldNote = note;
 
 	// Check if overtone descriptor is valid
@@ -156,22 +107,18 @@ floatArray_t overtone(float duration, float note, overtone_t *desc, wavefunc_t w
 	}
 
 
-	printf("First point\n");
 	// Create and keep track of all separate overtones
-	for (unsigned long overtoneIndex = 0; overtoneIndex < OVERTONE_MAX; overtoneIndex++){
-		if (desc->values[overtoneIndex] != 0.0f) { // check wether harmonic is present or not  
-			printf("In overtone, %d\n", overtoneCounter);
-			separate[overtoneCounter] = wavefunc(duration, note); // Check for error
+	for (unsigned long overtoneIndex = 0; overtoneIndex < OVERTONES_MAX; overtoneIndex++){
+		if (desc[overtoneIndex] != 0.0f) { // check wether harmonic is present or not  
+			DEBUG("In overtone, %lu\n", overtoneCounter);
+			separate[overtoneCounter] = createNote(duration, note, osc); // Check for error
 
-			printf("Called Wavefunc\n");
 			// Check for invalid float arrays
 			if (separate[overtoneCounter].length < 0){
-				printf("neg len\n");
-				while (overtoneCounter){		
+				while (overtoneCounter--){		
 					free(separate[overtoneCounter].data); // free all the previous
 				}
 				// set errorflag and return
-				printf("Alloc fail\n");
 				separate[0].length = SND_MEMORY_ERR;
 				return separate[0];
 
@@ -182,44 +129,56 @@ floatArray_t overtone(float duration, float note, overtone_t *desc, wavefunc_t w
 	}
 
 
-	printf("cleaning\n");
 	// Add them all together and return resulting floatArray (first one in array separate)  
 	for (unsigned long counter = 1; counter < overtoneCounter; counter++){
-		for (unsigned long floatIndex = 0; floatIndex < separate[counter].length; floatIndex++){
-			printf("adding\n");
+		for (int floatIndex = 0; floatIndex < separate[counter].length; floatIndex++){
 			separate[0].data[floatIndex] += separate[counter].data[floatIndex];
 		}
 		// Free all the previously allocated floatArrays (but not the first one which is returned)
 		// freeing NULL is fine according to C99, may happen if for loop ^^^ never runs (length < 0)
 		free(separate[counter].data);
-		printf("freed\n");
 	}
-	printf("leaving normally\n");
 	return separate[0];
 }
 
 
 // Add all together and frees them
 floatArray_t joinwaves(floatArray_t arrays[], unsigned long count){
+	DEBUG("Joining %lu melodies...", count);
+	if (count == 1){
+		return arrays[0];
+	}
 	// find longest floatarray and use it as the base.
-	// This float array will then be returnes
-	unsigned long longest;
-	unsigned long longestSize = 0;
-	for (unsigned long i = 0; i < count; i++){
+	// This float array will then be returned
+	long longest = 0;
+	long longestSize = 0;
+	int sample;
+	unsigned long i;
+	for (i = 0; i < count; i++){
 		if ( arrays[i].length > longestSize){
 			longest = i;
 			longestSize = arrays[i].length;
 		}
 	}
+	DEBUG("Longest arrayindex is %lu and its length is %ld", longest, longestSize);
 	// Add them together
 	for (i = 0; i < count; i++){
-		if (i != longest){
-			for (unsigned long sample; sample < arrays[i].length; sample++){
-				arrays[longest].data[sample] += arrays[i].data[sample]
+		if (i != (unsigned long) longest){
+			for (sample = 0; sample < arrays[i].length; sample++){
+				arrays[longest].data[sample] += arrays[i].data[sample];
 			}
-			// free unused array
-			free(arrays[i].data);
+			DEBUG("Added %d samples to longest array's data", sample);
+			DEBUG("Freeing %d floats at location %p\n", arrays[i].length, arrays[i].data);
+			free(arrays[i].data);			// free unused array
 		}
 	}
 	return arrays[longest];
+}
+
+void initOscillators(void){
+	oscillators[0] = &sineAt;
+	oscillators[1] = &sawtoothAt;
+	oscillators[2] = &squareAt;
+	oscillators[3] = &squaredseriesAt;
+	oscillators[4] = &noiseAt;
 }
