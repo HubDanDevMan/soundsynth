@@ -1,7 +1,12 @@
 import sndmath as s
-import os
-import subprocess
-# To play the audio, the program SOX a.k.a play has to be installed. This is because the file contains no metadata that specifies sample Rate, encoding and alike
+
+#TODO: TOO LOUD
+nechlsong = (
+"1.0 e4  1.0 c4 1.0g4 1.0d4",
+"1.0 f#4 1.0 e4 1.0b4 1.0f#4",
+"1.0 a4  1.0 g4 1.0d5 1.0a4",
+"1.0 a5  1.0 g5 1.0d4 1.0a5"
+)
 
 
 AmongUsMelody = """
@@ -56,21 +61,10 @@ beat2 = "0.5p 0.03c4 0.97p 0.03c4 0.97p 0.03c4 0.97p 0.03c4"
 
 
 def Main():
-    s.create_melody(MotherRussia, "russia.raw", s.SAW)
-    s.instrument_melody(AmongUsMelody, "amogus.raw", s.PIANO)
-    s.create_melodies((beat, beat2), "noise.raw", s.NOISE)
-    ret = 0
-    try:
-        if os.name == 'posix':
-            ret = subprocess.check_output(["which","play"])
-        else:
-            ret = subprocess.check_output(["where","play"]);
-        # Play directly
-        if ret:
-            for fname in ("russia.raw", "amogus.raw", "noise.raw"):
-                os.system(f"play --volume 2.0 --endian little -r 44100 -c 1 -e floating-point -b 32 {fname}")
-    except Exception as e:
-        print("Unable to play file data with SoX: ", e)
+    s.create_melody(MotherRussia, "russia.wav", s.SAW)
+    s.instrument_melody(AmongUsMelody, "amogus.wav", s.PIANO)
+    s.create_melodies((beat, beat2), "noise.wav", s.NOISE)
+    s.create_melodies(nechlsong, "nechl.wav", s.SIN);
 
 if __name__ == '__main__':
     Main()

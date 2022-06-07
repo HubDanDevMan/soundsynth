@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 
-#define DEBUG_STATE 0
+#define DEBUG_STATE 1
 #define DEBUG_OUTPUT_STREAM stderr
 // hacky C way with do while to run it once
 #define DEBUG(fmt, ...)												\

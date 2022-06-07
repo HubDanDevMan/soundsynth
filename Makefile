@@ -10,3 +10,7 @@ default: setup.py
 install: default
 	$(PY) $(PYBUILD) $(PYINSTALL)
 
+clean:
+	-rm build/*
+	-rm *.wav
+	@echo Done

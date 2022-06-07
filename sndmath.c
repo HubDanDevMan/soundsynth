@@ -6,9 +6,9 @@
 #include "debug.h"
 #include "soundwaves.h"
 #include "harmonics.h"
-//#include "clip.h"
-//#include "wav.h"
-
+#include "multimel.h"
+#include "wav.h"
+#include "compressor.h"
 
 
 
@@ -23,6 +23,8 @@ static PyObject * create_melody(PyObject * self, PyObject * args)
 	unsigned long noteCounter = 0;		// Counts the number of notes parsed
 	FILE * output;				// Output File
 	floatArray_t note;			// Output data temporary storage
+	floatArray_t result = {NULL, 0};
+	unsigned long res;
 
 
 	// Parse the arguments for melody string
@@ -57,26 +59,27 @@ static PyObject * create_melody(PyObject * self, PyObject * args)
 		// handle the data and generate soundwaves
 		DEBUG("OSC: %d", osc);
 		note = createNote(curNote.duration, curNote.freq, osc);	
-		if (fwrite(note.data, sizeof(float), note.length, output) < 0){		// append output to file
-			PyErr_SetString(PyExc_IOError, "Could not write to file.");
-			// clean up
-			free(note.data);
-			fclose(output);
-			return NULL;
-		}
 		if (curNote.freq != -1.0f){
+			result = joinNotes(result, note);
 			DEBUG("freq: %f, duration %f", curNote.freq, curNote.duration);
- 			free(note.data);
 		}
 		noteCounter++;
 	}
+
 	DEBUG("Done parsing, cleaning up and returning...");
+	res = writeAsWAV(result, output);
+	free(result.data);
+	fclose(output);
+	if (res < 0) {
+		PyErr_SetString(PyExc_IOError, "Could not write to file.");
+		return NULL;
+	}
 	fclose(output);
 	return PyLong_FromLong(noteCounter);
 
 }
 
-
+// TODO: Find better Formula for adjusting volume. 
 /* create_melodies(melodies, filename, osc) */
 static PyObject * create_melodies(PyObject * self, PyObject * args){
 	FILE * output;
@@ -84,8 +87,9 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 	Py_ssize_t currentStringSize;
 	PyObject * melodytuple;
 	PyObject * currentMelodyStr;
-	floatArray_t *melodies;
-	floatArray_t result;
+	floatArray_t *melodies = NULL;
+	floatArray_t note = {NULL, 0};
+	floatArray_t result = {NULL, 0};
 	struct note curNote = {0,{0}};
 	const char * filename;
 	const char * melodystr;
@@ -109,6 +113,8 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 	}
 
 	tuplesize = PyTuple_Size(melodytuple);						// Get size of the tuple
+	// set VOLUME to a reasonable value
+	VOLUME = VOLUME / (float)tuplesize / 2.0f;
 	DEBUG("TUPLESIZE: %lu", tuplesize);
 
 	// allocate space for all the floatarrays
@@ -117,15 +123,19 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 
 	for (Py_ssize_t i = 0; i < tuplesize; i++){
 		currentMelodyStr = PyTuple_GetItem(melodytuple, i);				// Get item from tuple[i]
+		if (!PyUnicode_Check(currentMelodyStr)){					// Error checking
+			PyErr_SetString(PyExc_ValueError, "Tuple must contain strings only");
+			return NULL;
+		}	
 		melodystr = PyUnicode_AsUTF8AndSize(currentMelodyStr, &currentStringSize);	// Convert current UTF8 to cstring
 		DEBUG("Melodystring: %s", melodystr);
-		Py_DECREF(currentMelodyStr);
+		//Py_XDECREF(currentMelodyStr);
 		
 		if (melodystr == NULL){								// Check string validity 
 			PyErr_SetString(PyExc_ValueError, "Unable to decode String"
 					" in tuple, tuple content must be a string");
 			fclose(output);								// Clean up and raise error
-			Py_XDECREF(melodytuple);
+			//Py_XDECREF(melodytuple);
 			return NULL;
 		}
 
@@ -144,25 +154,13 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 					"Unspecified error occured.");
 				}
 				fclose(output);							// Clean up and return
-				Py_XDECREF(melodytuple);
+				//Py_XDECREF(melodytuple);
 				return NULL;
 			}
 
 			else if (curNote.done > PARSING_DONE){
-				result = createNote(curNote.duration, curNote.freq, osc);		// Create new Note
-				if (melodies[i].data != NULL){						// Check if this is the first note being synthesized
-					melodies[i].data = realloc(melodies[i].data,
-						sizeof(float) * (melodies[i].length + result.length));	// Assign more space to melody sample data
-					memcpy( &(melodies[i].data[melodies[i].length]),
-						result.data, result.length*sizeof(float));		// Append new note samples
-					melodies[i].length += result.length;
-					DEBUG("Next note, realloced %d floats", result.length);
-					free(result.data);						// Free note data as it has been copied to melodies array
-				} else {								// For first note there is no need reallocate data
-					DEBUG("First note, no reallocation");
-					melodies[i].data = result.data;
-					melodies[i].length = result.length;
-				}
+				note = createNote(curNote.duration, curNote.freq, osc);		// Create new Note
+				melodies[i] = joinNotes(melodies[i], note);
 				DEBUG("Appending note with freq: %f, duration %f", curNote.freq, curNote.duration);
 			}
 
@@ -175,21 +173,18 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 	}
 
 
-	if (DEBUG_STATE){											// Get some debugging information on the melodies
-		for (int j = 0; j < tuplesize; j++){
-			DEBUG("LENGTH: %d\tLOCATION: %p", melodies[j].length, melodies[j].data);
-		}
-	}
-
 	result = joinwaves(melodies, tuplesize);			// Add all the waves together
-	DEBUG("Successfuly joined all samples");
+	DEBUG("Successfuly joined all samples, freeing melodies");
 	
 	free(melodies);							// Free melodies
-	Py_XDECREF(melodytuple);
-
-	res = fwrite(result.data, sizeof(float), result.length, output);// Write sample data to disk
+	//Py_XDECREF(melodytuple);
+	VOLUME = 0.4f;
+	//linearCompressor(result, 0.5f, 0.95f);
+	res = writeAsWAV(result, output);
+	DEBUG("freeing result sample data...");
 	free(result.data);
 	fclose(output);
+
 	if (res < 0) {
 		PyErr_SetString(PyExc_IOError, "Could not write to file.");
 		return NULL;
@@ -198,6 +193,7 @@ static PyObject * create_melodies(PyObject * self, PyObject * args){
 
 	return PyLong_FromLong(tuplesize);	// returns number of melodies added
 }
+
 
 static PyObject * instrument_melody(PyObject * self, PyObject * args)
 {
@@ -208,12 +204,10 @@ static PyObject * instrument_melody(PyObject * self, PyObject * args)
 	struct note curNote = {0.0,{0.0}};	// The parsed current note being evaluated
 	unsigned long index = 0;		// Current position in the melody string
 	unsigned long noteCounter = 0;		// Counts the number of notes parsed
-	FILE * output;				// Output File
+	FILE * output = NULL;				// Output File
 	floatArray_t note = {NULL, 0};		// Output data temporary storage
 	floatArray_t result = {NULL, 0};	// Final product	
 	unsigned long res;
-	int reallocSizeBytes;
-	int i;
 
 	if (!PyArg_ParseTuple(args, "ssi", &melodystr, &filename, &instr)){
 		return NULL;
@@ -249,35 +243,14 @@ static PyObject * instrument_melody(PyObject * self, PyObject * args)
 			note = (*INSTRUMENTS[instr])(curNote.duration, curNote.freq);	
 			DEBUG("Note at %p length is %d samples", note.data, note.length);
 			if (curNote.freq != -1.0f){
-				// check if currentNote is the first one
-				if (result.data == NULL){
-					result.data = note.data;
-					result.length = note.length;
-				} else {		// not first note
-					int releaseCount = instrdata[instr].env.release * SAMPLE_SIZE;
-					// Add to previous release signal
-					for (i = 0; i < releaseCount; i++){
-						result.data[result.length + i - releaseCount] += note.data[i];
-					}
-
-					reallocSizeBytes = (result.length + note.length - releaseCount) * sizeof(float);
-					DEBUG("Reallocation size: %d, thats %d new floats", reallocSizeBytes, reallocSizeBytes/4);
-					result.data = realloc(result.data, reallocSizeBytes);
-
-					/*	previous note end		current note without prev rel phase	floatcount without previous release phase */
-					memcpy( &(result.data[result.length]) , &(note.data[releaseCount]), sizeof(float)*(note.length - releaseCount));
-					result.length = result.length + note.length - releaseCount;
-
-					DEBUG("freing note %p with length %d", note.data, note.length);
-					free(note.data);
-				}
-				DEBUG("freq: %f, duration %f", curNote.freq, curNote.duration);
+				result = joinNotesInstrument(result, note, instr);
 				noteCounter++;
 			}
 		}
 	}
 	DEBUG("Location %p, length %d", result.data, result.length);
-	res = fwrite(result.data, sizeof(float), result.length, output);	// Write sample data to disk
+	//res = fwrite(result.data, sizeof(float), result.length, output);	// Write sample data to disk
+	res = writeAsWAV(result, output);
 	free(result.data);
 	fclose(output);
 	if (res < 0) {

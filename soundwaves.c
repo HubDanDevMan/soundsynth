@@ -9,7 +9,7 @@
 osc_t oscillators[OSC_COUNT];
 
 const unsigned long SAMPLE_SIZE = 44100;	// 44.1k is the default sample size
-const float VOLUME = 0.4f; 			// Default volume, less than 1 to ensure less clipping is performed at the end
+float VOLUME = 0.4f; 			// Default volume, less than 1 to ensure less clipping is performed at the end
 
 
 float FREQ(float tone){
@@ -64,7 +64,7 @@ floatArray_t createNote(float duration, float note, OSC osc){
 	flar.length = duration * SAMPLE_SIZE; // time in seconds * (samples/second)
 
 	if (note == -1.0f){
-		DEBUG("Unexpected Frequency of -1.0f");
+		DEBUG("Frequency is -1.0f, i.e. DONE PARSING");
 		flar.length = 0;
 		return flar;
 	} 
@@ -94,54 +94,6 @@ floatArray_t createNote(float duration, float note, OSC osc){
 
 
 
-/* This function generates a float array of a note with harmonic overtones */
-floatArray_t overtone(float duration, float note, float desc[OVERTONES_MAX], OSC osc){
-	floatArray_t separate[OVERTONES_MAX];
-	unsigned long overtoneCounter = 0;
-	float oldNote = note;
-
-	// Check if overtone descriptor is valid
-	if (desc == NULL){
-		separate[0].length = SND_INV_DESC_ERR;	// Set Errorflag
-		return separate[0];
-	}
-
-
-	// Create and keep track of all separate overtones
-	for (unsigned long overtoneIndex = 0; overtoneIndex < OVERTONES_MAX; overtoneIndex++){
-		if (desc[overtoneIndex] != 0.0f) { // check wether harmonic is present or not  
-			DEBUG("In overtone, %lu\n", overtoneCounter);
-			separate[overtoneCounter] = createNote(duration, note, osc); // Check for error
-
-			// Check for invalid float arrays
-			if (separate[overtoneCounter].length < 0){
-				while (overtoneCounter--){		
-					free(separate[overtoneCounter].data); // free all the previous
-				}
-				// set errorflag and return
-				separate[0].length = SND_MEMORY_ERR;
-				return separate[0];
-
-			}
-			overtoneCounter++;
-		}
-		note += oldNote;
-	}
-
-
-	// Add them all together and return resulting floatArray (first one in array separate)  
-	for (unsigned long counter = 1; counter < overtoneCounter; counter++){
-		for (int floatIndex = 0; floatIndex < separate[counter].length; floatIndex++){
-			separate[0].data[floatIndex] += separate[counter].data[floatIndex];
-		}
-		// Free all the previously allocated floatArrays (but not the first one which is returned)
-		// freeing NULL is fine according to C99, may happen if for loop ^^^ never runs (length < 0)
-		free(separate[counter].data);
-	}
-	return separate[0];
-}
-
-
 // Add all together and frees them
 floatArray_t joinwaves(floatArray_t arrays[], unsigned long count){
 	DEBUG("Joining %lu melodies...", count);
@@ -168,7 +120,7 @@ floatArray_t joinwaves(floatArray_t arrays[], unsigned long count){
 				arrays[longest].data[sample] += arrays[i].data[sample];
 			}
 			DEBUG("Added %d samples to longest array's data", sample);
-			DEBUG("Freeing %d floats at location %p\n", arrays[i].length, arrays[i].data);
+			DEBUG("Freeing %d floats at location %p", arrays[i].length, arrays[i].data);
 			free(arrays[i].data);			// free unused array
 		}
 	}

@@ -5,7 +5,7 @@
 // therefore CONST
 // To avoid overoptimization, it is declared as VOLATILE because it might be changed in Python
 extern const unsigned long SAMPLE_SIZE; // 44.1k is the default sample size
-extern const float VOLUME;
+extern float VOLUME;
 
 
 #define OSC_COUNT 5
@@ -36,9 +36,7 @@ typedef struct {
 typedef floatArray_t (*wavefunc_t)(float,float); 
 typedef float (*osc_t)(unsigned long,float); 
 
-//floatArray_t sinewave(float duration, float note);
 floatArray_t createNote(float duration, float note, OSC osc);
-//floatArray_t overtone(float duration, float note, overtone_t * desc, wavefunc_t wavefunc);
 floatArray_t joinwaves(floatArray_t arrays[], unsigned long size);
 void initOscillators(void);
 
